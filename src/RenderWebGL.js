@@ -669,6 +669,27 @@ class RenderWebGL extends EventEmitter {
         }
     }
 
+    drawWithMask (maskSkinId) {
+        this._doExitDrawRegion();
+
+        const gl = this._gl;
+
+        twgl.bindFramebufferInfo(gl, null);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clearColor(...this._backgroundColor4f);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        let drawList = [];
+        for(let i=0; i<this._drawList.length; i++) {
+            if(this._allDrawables[this._drawList[i]]._skin._id != maskSkinId) {
+                drawList.push(this._drawList[i]);
+            }
+        }
+        this._drawThese(drawList, ShaderManager.DRAW_MODE.default, this._projection, {
+            framebufferWidth: gl.canvas.width,
+            framebufferHeight: gl.canvas.height
+        });
+    }
+
     /**
      * Get the precise bounds for a Drawable.
      * @param {int} drawableID ID of Drawable to get bounds for.
