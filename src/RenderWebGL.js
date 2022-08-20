@@ -669,25 +669,61 @@ class RenderWebGL extends EventEmitter {
         }
     }
 
-    drawWithMask (maskSkinId) {
+    drawWithMask (maskSkinId, x=-240, y=180, width=480, height=360, targetWidth=320, targetHeight=240) {
         this._doExitDrawRegion();
 
         const gl = this._gl;
 
-        twgl.bindFramebufferInfo(gl, null);
-        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-        gl.clearColor(...this._backgroundColor4f);
-        gl.clear(gl.COLOR_BUFFER_BIT);
         let drawList = [];
         for(let i=0; i<this._drawList.length; i++) {
             if(this._allDrawables[this._drawList[i]]._skin._id != maskSkinId) {
                 drawList.push(this._drawList[i]);
             }
         }
-        this._drawThese(drawList, ShaderManager.DRAW_MODE.default, this._projection, {
-            framebufferWidth: gl.canvas.width,
-            framebufferHeight: gl.canvas.height
-        });
+/*
+		const org_width = this.canvas.width;
+		const org_height = this.canvas.height;
+		this.canvas.width = targetWidth;
+		this.canvas.height = targetHeight;
+
+		twgl.bindFramebufferInfo(gl, null);
+		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+		gl.clearColor(...this._backgroundColor4f);
+		gl.clear(gl.COLOR_BUFFER_BIT);
+		this._drawThese(drawList, ShaderManager.DRAW_MODE.default, this._projection);
+		const base64 = this.canvas.toDataURL('image/jpeg', 0.5).replace('data:image/jpeg;base64,', '');
+		this.canvas.width = org_width;
+		this.canvas.height = org_height;
+*/
+		twgl.bindFramebufferInfo(gl, this._queryBufferInfo);
+		const bounds = new Rectangle();
+		bounds.initFromBounds(x, x + width, y - height, y);
+		gl.viewport(0, 0, width, height);
+		const projection = twgl.m4.ortho(bounds.left, bounds.right, bounds.top, bounds.bottom, -1, 1);
+		gl.clearColor(...this._backgroundColor4f);
+		gl.clear(gl.COLOR_BUFFER_BIT);
+		this._drawThese(drawList, ShaderManager.DRAW_MODE.default, projection);
+
+		const data = new Uint8Array(width * height * 4);
+		gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+
+		const tmpCanvas = document.createElement('canvas');
+		tmpCanvas.width = width;
+		tmpCanvas.height = height;
+		const tmpCtx = tmpCanvas.getContext('2d');
+		const imageData = tmpCtx.createImageData(width, height);
+		imageData.data.set(data);
+		tmpCtx.putImageData(imageData, 0, 0);
+
+		const tmpCanvas2 = document.createElement('canvas');
+		tmpCanvas2.width = targetWidth;
+		tmpCanvas2.height = targetHeight;
+		const tmpCtx2 = tmpCanvas2.getContext('2d');
+		tmpCtx2.drawImage(tmpCanvas, 0, 0, targetWidth, targetHeight);
+		console.log(tmpCanvas2.toDataURL('image/jpeg', 0.5));
+		const base64 = tmpCanvas2.toDataURL('image/jpeg', 0.5).replace('data:image/jpeg;base64,', '');
+
+		return base64;
     }
 
     /**
