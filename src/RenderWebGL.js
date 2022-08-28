@@ -222,6 +222,9 @@ class RenderWebGL extends EventEmitter {
         /** @todo disable when no partial transparency? */
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+        this._penSkinId = null;
+        this._penDrawableId = null;
     }
 
     /**
@@ -669,14 +672,28 @@ class RenderWebGL extends EventEmitter {
         }
     }
 
-    drawWithMask (maskSkinId, x=-240, y=180, width=480, height=360, targetWidth=320, targetHeight=240) {
+    drawWithMask (maskSkinId, xs=[-240,240], ys=[-180,180], target={width:320,height:240}, rotate=0) {
         this._doExitDrawRegion();
 
         const gl = this._gl;
 
+		if(this._penSkinId == null) {
+			this._penSkinId = this.createPenSkin();
+			this._penDrawableId = this.createDrawable('pen');
+			this.updateDrawableSkinId(this._penDrawableId, this._penSkinId);
+		}
+
+		xs = [Math.round(xs[0]), Math.round(xs[1])];
+		ys = [Math.round(ys[0]), Math.round(ys[1])];
+		if(xs[0] > xs[1]) xs = [xs[1],xs[0]];
+		if(ys[0] > ys[1]) ys = [ys[1],ys[0]];
+		const width = xs[1] - xs[0];
+		const height = ys[1] - ys[0];
+
         let drawList = [];
         for(let i=0; i<this._drawList.length; i++) {
-            if(this._allDrawables[this._drawList[i]]._skin._id != maskSkinId) {
+            if(this._allDrawables[this._drawList[i]]._skin._id != maskSkinId
+            && this._allDrawables[this._drawList[i]]._skin._id != this._penSkinId) {
                 drawList.push(this._drawList[i]);
             }
         }
@@ -697,7 +714,7 @@ class RenderWebGL extends EventEmitter {
 */
 		twgl.bindFramebufferInfo(gl, this._queryBufferInfo);
 		const bounds = new Rectangle();
-		bounds.initFromBounds(x, x + width, y - height, y);
+		bounds.initFromBounds(xs[0], xs[1], ys[0], ys[1]);
 		gl.viewport(0, 0, width, height);
 		const projection = twgl.m4.ortho(bounds.left, bounds.right, bounds.top, bounds.bottom, -1, 1);
 		gl.clearColor(...this._backgroundColor4f);
@@ -716,12 +733,23 @@ class RenderWebGL extends EventEmitter {
 		tmpCtx.putImageData(imageData, 0, 0);
 
 		const tmpCanvas2 = document.createElement('canvas');
-		tmpCanvas2.width = targetWidth;
-		tmpCanvas2.height = targetHeight;
+		tmpCanvas2.width = target.width;
+		tmpCanvas2.height = target.height;
 		const tmpCtx2 = tmpCanvas2.getContext('2d');
-		tmpCtx2.drawImage(tmpCanvas, 0, 0, targetWidth, targetHeight);
+		tmpCtx2.translate(target.width/2, target.height/2);
+		tmpCtx2.rotate(rotate * Math.PI/180);
+		tmpCtx2.drawImage(tmpCanvas, -target.width/2, -target.height/2, target.width, target.height);
 		console.log(tmpCanvas2.toDataURL('image/jpeg', 0.5));
 		const base64 = tmpCanvas2.toDataURL('image/jpeg', 0.5).replace('data:image/jpeg;base64,', '');
+
+		const colorRed   = [1,0,0,1];
+		const colorGreen = [0,1,0,1];
+		const attr = { color4f: colorGreen, diameter: 1 };
+		this.penClear(this._penSkinId);
+		this.penLine(this._penSkinId, attr, xs[0], ys[0], xs[1], ys[0]);
+		this.penLine(this._penSkinId, attr, xs[0], ys[0], xs[0], ys[1]);
+		this.penLine(this._penSkinId, attr, xs[0], ys[1], xs[1], ys[1]);
+		this.penLine(this._penSkinId, attr, xs[1], ys[0], xs[1], ys[1]);
 
 		return base64;
     }
