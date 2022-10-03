@@ -672,7 +672,7 @@ class RenderWebGL extends EventEmitter {
         }
     }
 
-    drawWithMask (maskSkinId, xs=[-240,240], ys=[-180,180], target={width:320,height:240}, rotate=0) {
+    drawWithMask (maskSkinId, xs=[-240,240], ys=[-180,180], target={width:320,height:240}, rotate=0, format='jpegBase64') {
         this._doExitDrawRegion();
 
         const gl = this._gl;
@@ -739,8 +739,6 @@ class RenderWebGL extends EventEmitter {
 		tmpCtx2.translate(target.width/2, target.height/2);
 		tmpCtx2.rotate(rotate * Math.PI/180);
 		tmpCtx2.drawImage(tmpCanvas, -target.width/2, -target.height/2, target.width, target.height);
-		console.log(tmpCanvas2.toDataURL('image/jpeg', 0.5));
-		const base64 = tmpCanvas2.toDataURL('image/jpeg', 0.5).replace('data:image/jpeg;base64,', '');
 
 		const colorRed   = [1,0,0,1];
 		const colorGreen = [0,1,0,1];
@@ -751,7 +749,18 @@ class RenderWebGL extends EventEmitter {
 		this.penLine(this._penSkinId, attr, xs[0], ys[1], xs[1], ys[1]);
 		this.penLine(this._penSkinId, attr, xs[1], ys[0], xs[1], ys[1]);
 
-		return base64;
+		switch(format) {
+		case 'jpegBase64':
+			console.log(tmpCanvas2.toDataURL('image/jpeg', 0.5));
+			const base64 = tmpCanvas2.toDataURL('image/jpeg', 0.5).replace('data:image/jpeg;base64,', '');
+			return base64;
+		case 'ImageData':
+			return tmpCtx2.getImageData(0, 0, target.width, target.height).data;
+			
+		default:
+			throw 'error';
+		}
+		return;
     }
 
     /**
