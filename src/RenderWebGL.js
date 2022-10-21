@@ -225,6 +225,11 @@ class RenderWebGL extends EventEmitter {
 
         this._penSkinId = null;
         this._penDrawableId = null;
+
+        /** sohtamei **/
+        this.targetWidth = 320;
+        this.targetHeight = 240;
+        this.targetData = new Uint8Array(this.targetWidth * this.targetHeight * 4);
     }
 
     /**
@@ -672,10 +677,18 @@ class RenderWebGL extends EventEmitter {
         }
     }
 
-    drawWithMask (maskSkinId, xs=[-240,240], ys=[-180,180], target={width:320,height:240}, rotate=0, format='jpegBase64') {
-        this._doExitDrawRegion();
+	setDevSize(targetWidth, targetHeight) {
+		if(1) {//this.targetWidth != targetWidth || this.targetHeight != targetHeight) {
+			this.targetWidth = targetWidth;
+			this.targetHeight = targetHeight;
+			this.targetData = new Uint8Array(this.targetWidth * this.targetHeight * 4);
+		}
+	}
 
-        const gl = this._gl;
+	drawWithMask (maskSkinId, xs=[-240,240], ys=[-180,180], rotate=0, format='jpegBase64') {
+		this._doExitDrawRegion();
+
+		const gl = this._gl;
 
 		if(this._penSkinId == null) {
 			this._penSkinId = this.createPenSkin();
@@ -687,8 +700,8 @@ class RenderWebGL extends EventEmitter {
 		ys = [Math.round(ys[0]), Math.round(ys[1])];
 		if(xs[0] > xs[1]) xs = [xs[1],xs[0]];
 		if(ys[0] > ys[1]) ys = [ys[1],ys[0]];
-		const width = xs[1] - xs[0];
-		const height = ys[1] - ys[0];
+		const winWidth = xs[1] - xs[0];
+		const winHeight = ys[1] - ys[0];
 
         let drawList = [];
         for(let i=0; i<this._drawList.length; i++) {
@@ -712,34 +725,65 @@ class RenderWebGL extends EventEmitter {
 		this.canvas.width = org_width;
 		this.canvas.height = org_height;
 */
+		// glから winCanvas作成 (windows領域)
 		twgl.bindFramebufferInfo(gl, this._queryBufferInfo);
 		const bounds = new Rectangle();
 		bounds.initFromBounds(xs[0], xs[1], ys[0], ys[1]);
-		gl.viewport(0, 0, width, height);
+		gl.viewport(0, 0, winWidth, winHeight);
 		const projection = twgl.m4.ortho(bounds.left, bounds.right, bounds.top, bounds.bottom, -1, 1);
 		gl.clearColor(...this._backgroundColor4f);
 		gl.clear(gl.COLOR_BUFFER_BIT);
 		this._drawThese(drawList, ShaderManager.DRAW_MODE.default, projection);
 
-		const data = new Uint8Array(width * height * 4);
-		gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+		const winData = new Uint8Array(winWidth * winHeight * 4);
+		gl.readPixels(0, 0, winWidth, winHeight, gl.RGBA, gl.UNSIGNED_BYTE, winData);
 
-		const tmpCanvas = document.createElement('canvas');
-		tmpCanvas.width = width;
-		tmpCanvas.height = height;
-		const tmpCtx = tmpCanvas.getContext('2d');
-		const imageData = tmpCtx.createImageData(width, height);
-		imageData.data.set(data);
+		const winCanvas = document.createElement('canvas');
+		winCanvas.width = winWidth;
+		winCanvas.height = winHeight;
+		const tmpCtx = winCanvas.getContext('2d');
+		const imageData = tmpCtx.createImageData(winWidth, winHeight);
+		imageData.data.set(winData);
 		tmpCtx.putImageData(imageData, 0, 0);
 
-		const tmpCanvas2 = document.createElement('canvas');
-		tmpCanvas2.width = target.width;
-		tmpCanvas2.height = target.height;
-		const tmpCtx2 = tmpCanvas2.getContext('2d');
-		tmpCtx2.translate(target.width/2, target.height/2);
-		tmpCtx2.rotate(rotate * Math.PI/180);
-		tmpCtx2.drawImage(tmpCanvas, -target.width/2, -target.height/2, target.width, target.height);
+		// winCanvasを加工してtargetCanvas, targetCtx作成
+		const targetCanvas = document.createElement('canvas');
+		targetCanvas.width = this.targetWidth;
+		targetCanvas.height = this.targetHeight;
+		const targetCtx = targetCanvas.getContext('2d');
+		targetCtx.translate(this.targetWidth/2, this.targetHeight/2);
+		targetCtx.rotate(rotate * Math.PI/180);
+		// drawImage(image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight);
+		targetCtx.drawImage(winCanvas, -this.targetWidth/2, -this.targetHeight/2, this.targetWidth, this.targetHeight);
 
+		const curBuf = targetCtx.getImageData(0, 0, this.targetWidth, this.targetHeight).data;
+
+		let x1 = this.targetWidth-1;
+		let x2 = 0;
+		let y1 = this.targetHeight-1;
+		let y2 = 0;
+
+		for(let y=0; y<this.targetHeight; y++) {
+			for(let x=0; x<this.targetWidth*4; x++) {
+				if(this.targetData[y*this.targetWidth*4 + x] != curBuf[y*this.targetWidth*4 + x]) {
+					y1 = Math.min(y1, y);
+					y2 = Math.max(y2, y);
+					x1 = Math.min(x1, x>>2);
+					x2 = Math.max(x2, x>>2);
+				}
+			}
+		}
+
+		if(y1 > y2 || x1 > x2) return;	// no difference
+
+		this.targetData.set(curBuf, 0);
+
+		x1 =  x1 & ~0x7;
+		x2 = (x2 & ~0x7)+7;
+		y1 =  y1 & ~0x7;
+		y2 = (y2 & ~0x7)+7;
+		const outpWidth = x2-x1+1;
+		const outpHeight = y2-y1+1;
 		const colorRed   = [1,0,0,1];
 		const colorGreen = [0,1,0,1];
 		const attr = { color4f: colorGreen, diameter: 1 };
@@ -749,14 +793,23 @@ class RenderWebGL extends EventEmitter {
 		this.penLine(this._penSkinId, attr, xs[0], ys[1], xs[1], ys[1]);
 		this.penLine(this._penSkinId, attr, xs[1], ys[0], xs[1], ys[1]);
 
+		// outpCanvas作成
+		const outpCanvas = document.createElement('canvas');
+		outpCanvas.width = outpWidth;
+		outpCanvas.height = outpHeight;
+		const outpCtx = outpCanvas.getContext('2d');
+		// drawImage(image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight);
+		outpCtx.drawImage(targetCanvas, x1, y1, outpWidth, outpHeight,0,0,outpWidth, outpHeight);
+
 		switch(format) {
 		case 'jpegBase64':
-			console.log(tmpCanvas2.toDataURL('image/jpeg', 0.5));
-			const base64 = tmpCanvas2.toDataURL('image/jpeg', 0.5).replace('data:image/jpeg;base64,', '');
-			return base64;
+			console.log(outpCanvas.toDataURL('image/jpeg', 0.5));
+			const base64 = outpCanvas.toDataURL('image/jpeg', 0.5).replace('data:image/jpeg;base64,', '');
+			return {base64:base64, x:x1, y:y1};
 		case 'ImageData':
-			return tmpCtx2.getImageData(0, 0, target.width, target.height).data;
-			
+			const width = x2-x1+1;
+			const height = y2-y1+1;
+			return {data:outpCtx.getImageData(0, 0, width, height).data, x1:x1, y1:y1, x2:x2, y2:y2, width:width, height:height};
 		default:
 			throw 'error';
 		}
